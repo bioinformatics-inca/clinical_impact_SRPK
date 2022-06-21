@@ -1,4 +1,4 @@
-# SRPK at single-cell resolution and its clinical impact in melanoma patients
+# SRPK at single-cell resolution and its clinical impact in melanoma patients dnamag
 
 This repository contains scripts used to generate figures associated with the following study: "Impaired expression of serine/arginine protein kinase 2 (SRPK2) affects melanoma progression in mice". The data belong to the work of Jerby-Arnon et al (2018), and our aim was to analyze the role of SRPKs among the subcluster of malignant cells, more specifically a group of malignant cells with high expression of SRPK2 and its clinical impact on metastatic melanoma patients.
 
