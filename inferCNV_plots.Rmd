@@ -1,0 +1,110 @@
+---
+title: "Melanoma - Monica"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+})
+```
+
+```{r}
+melanoma <- readRDS("~/lbbc_members/share/ufv/monica/melanoma_seurat.rds")
+malignant <- readRDS("~/lbbc_members/share/ufv/monica/malignant_seurat.rds")
+Idents(malignant) <- malignant$leiden_0.3
+new.cluster.ids <- c("Low_SRPK", "High_SRPK", "Low_SRPK", "Low_SRPK", "Low_SRPK")
+names(new.cluster.ids) <- levels(malignant)
+malignant <- RenameIdents(malignant, new.cluster.ids)
+malignant$celltype <- malignant@active.ident
+malignant$celltype %>% table()
+```
+
+```{r}
+malignant$cell_barcode <- malignant$Unnamed..0
+malignant$mal_celltype <- malignant$celltype
+malignant_meta <- malignant@meta.data
+
+melanoma$cell_barcode <- rownames(melanoma@meta.data)
+melanoma_meta <- melanoma@meta.data
+```
+
+```{r}
+merge <- left_join(melanoma_meta, malignant_meta, by ='cell_barcode')
+```
+
+```{r}
+melanoma$mal_celltype <- merge$mal_celltype
+melanoma$celltype <- melanoma$celltype %>% as.character()
+melanoma$final_celltype <- ifelse(melanoma$celltype == "Malignant", melanoma$mal_celltype, melanoma$celltype)
+```
+
+```{r}
+setwd("~/lbbc_members/share/ufv/monica")
+sc <- reticulate::import('scanpy')
+adata <- sc$read("integration_inferCNV.h5ad")
+```
+
+```{r}
+melanoma$cnv_score <-adata$obs$cnv_score
+melanoma_meta$cnv_score <-adata$obs$cnv_score
+
+merge2 <- right_join(melanoma_meta, malignant_meta, by ='cell_barcode')
+```
+
+```{r}
+malignant$cnv_score <- merge2$cnv_score
+```
+
+```{r}
+malignant$cnv_condition <- ifelse(malignant$cnv_score >=0.006, "High_CNV", "Low_CNV")
+```
+
+```{r}
+pal= c("#7F3C8D", "#11A579", "#3969AC", "#F2B701",
+       "#E73F74","#80BA5A", "#E68310", "#008695", "#A5AA99")
+```
+
+```{r}
+p1 <- DimPlot(melanoma, group.by = 'celltype', reduction = "UMAP", cols=pal, raster = TRUE, pt.size = 2) + ggtitle("Melanoma Microenvironment", subtitle = "6,669 cells from Jerby et al") +theme(plot.title = element_text(hjust=0))
+plot(p1)
+```
+
+```{r}
+p2 <- DimPlot(melanoma, group.by = 'celltype', split.by = 'harm_tumor.site', reduction = "UMAP", cols=pal, raster = TRUE, pt.size = 2) + ggtitle("Cell Types Across Tumor Sites", subtitle = "6,669 cells from Jerby et al") +theme(plot.title = element_text(hjust=0))
+plot(p2)
+```
+
+```{r}
+p3 <- DimPlot(malignant, group.by = 'celltype', reduction = "UMAP", cols= c('#949494','deeppink4'), raster = TRUE, pt.size = 3) + ggtitle("Malignant Cells Subset") +theme(plot.title = element_text(hjust=0))
+plot(p3)
+```
+
+```{r}
+markers <- c("SRPK1", "SRPK2")
+p4 <- DotPlot(object = malignant, features = markers, col.min = 0) + scale_colour_gradient2(low = '#949494', high = "deeppink4")
+plot(p4)
+```
+
+```{r}
+p5 <- VlnPlot(object = malignant, features = markers, pt.size = 0.1, 
+              cols = c('deeppink4', 'deeppink4'), ncol = 2)
+plot(p5)
+```
+
+```{r}
+DimPlot(malignant, group.by = 'cnv_condition', cols= c('red','blue'), raster = TRUE, pt.size = 3)
+VlnPlot(malignant, features = 'cnv_score', cols =c('#949494','deeppink4'))
+```
+
+```{r}
+FeaturePlot(melanoma, features = 'cnv_score', raster = TRUE)+ scale_color_gradient2(mid = "blue", high = "red") 
+
+Idents(melanoma) <- melanoma$celltype
+VlnPlot(melanoma, features = 'cnv_score', cols = pal)
+```
+

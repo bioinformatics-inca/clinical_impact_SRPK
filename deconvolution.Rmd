@@ -1,0 +1,184 @@
+---
+title: "role of SRPK in prognosis"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(dplyr)
+  library(ggplot2)
+  library(survival)
+  library(survminer, lib.loc = "~/lbbc_members/II_Workshop/pckgs/Rpackages/4.0/")
+})
+```
+
+```{r}
+melanoma <- readRDS("~/sc_breast/data/colab_ufv/02_object/melanoma_seurat.rds")
+malignant <- readRDS("~/sc_breast/data/colab_ufv/02_object/malignant_seurat.rds")
+subset <- subset(melanoma, celltype != c('Malignant'))
+Idents(malignant) <- malignant$leiden_0.3
+new.cluster.ids <- c("Low_SRPK", "High_SRPK", "Low_SRPK", "Low_SRPK", "Low_SRPK")
+names(new.cluster.ids) <- levels(malignant)
+malignant <- RenameIdents(malignant, new.cluster.ids)
+```
+
+```{r}
+malignant$celltype <- malignant@active.ident
+malignant$celltype %>% table()
+
+subset$celltype <- as.character(subset$celltype)
+subset$celltype %>% table()
+```
+
+```{r}
+seurat <- merge(subset, malignant)
+seurat$celltype %>% table()
+```
+
+```{r}
+pal= c("#7F3C8D", "#11A579", "#3969AC", "#F2B701", "#E73F74","#80BA5A", "#E68310",
+        "#008695", "#A5AA99")
+```
+
+```{r}
+p1 <- DimPlot(melanoma, group.by = 'celltype', reduction = "UMAP", cols=pal) + ggtitle("Melanoma Microenvironment", subtitle = "6,669 cells from Jerby et al") +theme(plot.title = element_text(hjust=0))
+plot(p1)
+```
+
+```{r}
+p2 <- DimPlot(melanoma, group.by = 'celltype', split.by = 'harm_tumor.site', reduction = "UMAP", cols=pal) + ggtitle("Cell Types Across Tumor Sites", subtitle = "6,669 cells from Jerby et al") +theme(plot.title = element_text(hjust=0))
+plot(p2)
+```
+
+```{r}
+p3 <- DimPlot(malignant, group.by = 'celltype', reduction = "UMAP", cols= c('#949494','deeppink4')) + ggtitle("Malignant Cells Subset") +theme(plot.title = element_text(hjust=0))
+plot(p3)
+```
+```{r}
+markers <- c("SRPK1", "SRPK2")
+p4 <- DotPlot(object = malignant, features = markers, col.min = 0) + scale_colour_gradient2(low = '#949494', high = "deeppink4")
+plot(p4)
+```
+
+```{r}
+p5 <- VlnPlot(object = malignant, features = markers, pt.size = 0.1, 
+              cols = c('deeppink4', 'deeppink4'), ncol = 2)
+plot(p5)
+```
+
+
+```{r BisqueRNA}
+get.raw.data <- function(obj) Seurat::GetAssayData(object = obj,
+slot = "counts")
+
+
+sc.pheno <- data.frame(check.names=F, check.rows=F,
+                       stringsAsFactors=F,
+                       row.names=labels(seurat$celltype),
+                       SubjectName=as.character(seurat$patient),
+                       cellType=as.character(seurat$celltype))
+                       
+sc.meta <- data.frame(labelDescription=c("SubjectName",
+                                         "cellType"),
+                      row.names=c("SubjectName",
+                                  "cellType"))
+sc.pdata <- new("AnnotatedDataFrame",
+                data=sc.pheno,
+                varMetadata=sc.meta)
+sc.counts.matrix <- base::as.matrix(get.raw.data(seurat))
+sc.eset <- Biobase::ExpressionSet(assayData=sc.counts.matrix,
+                                  phenoData=sc.pdata)
+```
+
+```{r}
+load("~/sc_breast/data/colab_ufv/02_object/dados_SKCM.RData")
+bulk.eset <- Biobase::ExpressionSet(assayData = as.matrix(dados_SKCM$counts_metastatic))
+```
+
+```{r}
+res <- BisqueRNA::ReferenceBasedDecomposition(bulk.eset, sc.eset, markers=NULL, use.overlap=FALSE)
+```
+
+```{r}
+ref.based.estimates <- res$bulk.props
+ref.based.estimates[1:5,1:5]
+```
+
+```{r}
+Bisque_MEL <- as.data.frame(t(ref.based.estimates))
+Bisque_MEL1 <- Bisque_MEL
+for (i in 1:length(colnames(Bisque_MEL))) {
+  for (j in 1:5) {
+    quant <- quantile(Bisque_MEL1[,i])
+    Bisque_MEL[which(Bisque_MEL1[,i] > quant[j]),i] <- j
+  }
+}
+
+Bisque_MEL$sample <- rownames(Bisque_MEL)
+
+forest_data_Bisque <- left_join(dados_SKCM$survival_met[,c(1,16,17,2,5)],Bisque_MEL, by= c("bcr_patient_barcode" = "sample"))
+```
+
+```{r}
+forest_data_Bisque$CD4_T <- forest_data_Bisque$`CD4 T` 
+forest_data_Bisque$`CD4 T` <- NULL
+forest_data_Bisque$CD8_T <- forest_data_Bisque$`CD8 T` 
+forest_data_Bisque$`CD8 T` <- NULL
+forest_data_Bisque$Folicular_B_Cell <-forest_data_Bisque$`Folicular B Cell`
+forest_data_Bisque$`Folicular B Cell` <- NULL
+forest_data_Bisque$Plasma_B_Cell <- forest_data_Bisque$`Plasma B Cell`
+forest_data_Bisque$`Plasma B Cell` <- NULL
+```
+
+
+```{r}
+surv_object <- Surv(time = forest_data_Bisque$OS.time, event = forest_data_Bisque$OS)
+
+covariables <- colnames(forest_data_Bisque)[c(6:15)]
+univ_formulas_bisque <- sapply(covariables,
+                        function(x) as.formula(paste('surv_object ~', x)))
+
+univ_models_bisque <- lapply(univ_formulas_bisque, function(x){coxph(x, data = forest_data_Bisque)})
+
+univ_results_bisque <- lapply(univ_models_bisque,
+                       function(x){ 
+                         x <- summary(x)
+                         p.value<-signif(x$wald["pvalue"], digits=2)
+                         wald.test<-signif(x$wald["test"], digits=2)
+                         beta<-signif(x$coef[1], digits=2);#coeficient beta
+                         HR <-signif(x$coef[2], digits=2);#exp(beta)
+                         HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                         HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                         HR <- paste0(HR, " (", 
+                                      HR.confint.lower, "-", HR.confint.upper, ")")
+                         res<-c(beta, HR, wald.test, p.value)
+                         names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                       "p.value")
+                         return(res)
+                         #return(exp(cbind(coef(x),confint(x))))
+                       })
+
+res.bisque <- t(as.data.frame(univ_results_bisque, check.names = FALSE))
+res.bisque <- as.data.frame(res.bisque)
+res.bisque$p.value <- as.character(res.bisque$p.value)
+res.bisque$p.value <- as.numeric(res.bisque$p.value)
+res.bisque_filt <- res.bisque[which(res.bisque$p.value <= 0.05),]
+
+res.bisque_filt
+```
+
+
+```{r}
+fit.coxph <- coxph(surv_object ~ CD8_T + CD4_T + Myeloid + Fibroblasts + pDC + High_SRPK + NK + Plasma_B_Cell + Folicular_B_Cell,
+data = forest_data_Bisque)
+summary(fit.coxph)
+
+p6<- ggforest(fit.coxph, data = forest_data_Bisque) + theme_linedraw()
+plot(p6)
+```
+
+
+
