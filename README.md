@@ -5,3 +5,5 @@ This repository contains scripts used to generate figures associated with the fo
 The output of these scripts can be viewed in html at this link [https://drive.google.com/drive/folders/12w7PMj8gweDkV3XpaIhxYMQMwBpX-T0F?usp=sharing](https://drive.google.com/drive/folders/12w7PMj8gweDkV3XpaIhxYMQMwBpX-T0F?usp=sharing)
 
 The bioinformatics analysis was performed by Gabriela Rapozo and Leandro Santos, supervised by Mariana Boroni, PI of the Bioinformatics and Computational Biology Laboratory of the Brazilian National Cancer Institute (INCA).
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6678305.svg)](https://doi.org/10.5281/zenodo.6678305)
